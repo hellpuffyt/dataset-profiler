@@ -1,0 +1,7 @@
+column	type	nulls	distinct	unique_ratio
+order_id	integer	0	12	1.0000
+region	string	0	3	0.2500
+amount	float	1	11	1.0000
+signed_up	date	0	11	0.9167
+active	boolean	2	2	0.2000
+notes	empty	12	0	0.0000

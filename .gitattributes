@@ -1,0 +1,5 @@
+# The CI dogfood job diffs tool output against these fixtures, so their
+# line endings have to be the same on every checkout.
+*.csv text eol=lf
+*.tsv text eol=lf
+*.json text eol=lf

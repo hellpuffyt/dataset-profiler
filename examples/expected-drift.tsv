@@ -1,0 +1,7 @@
+column	status	severity	psi
+order_id	drifted	major	11.0507
+region	ok	none	0.0000
+amount	drifted	major	12.3838
+signed_up	ok	unknown	-
+active	ok	none	0.0000
+notes	type_changed	unknown	-

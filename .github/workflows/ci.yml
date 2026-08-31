@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: install
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: pytest
+        run: pytest -q
+
+  quality:
+    name: lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: install
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: ruff
+        run: ruff check .
+
+      - name: mypy (strict)
+        run: mypy
+
+      - name: coverage
+        run: pytest -q --cov=dataset_profiler --cov-report=term-missing
+
+  dogfood:
+    name: profile this repository's own sample
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: install
+        run: python -m pip install --upgrade pip && pip install -e .
+
+      # Runs the real console script against committed fixtures and
+      # asserts byte-for-byte equality with the committed expected output.
+      - name: profile the committed example
+        run: |
+          set -euo pipefail
+          dataset-profiler profile examples/sales.csv \
+            --format tsv -o profile.tsv
+          diff -u examples/expected-profile.tsv profile.tsv
+
+      # The exit status is the part a scheduled job depends on, so it is
+      # asserted explicitly rather than inferred from the output.
+      - name: detect the documented drift and fail on it
+        run: |
+          set -euo pipefail
+          status=0
+          dataset-profiler compare examples/sales-q2.csv \
+            --baseline examples/baseline.json \
+            --format tsv --fail-on-drift -o drift.tsv || status=$?
+          test "$status" -eq 2 || {
+            echo "expected exit status 2, got $status"; exit 1;
+          }
+          diff -u examples/expected-drift.tsv drift.tsv
+
+      # A baseline written by this build must describe the file it came
+      # from with no drift at all; anything else means profiling and
+      # comparison disagree about the same bytes.
+      - name: a fresh baseline reports no drift against its own source
+        run: |
+          set -euo pipefail
+          dataset-profiler profile examples/sales.csv \
+            --format json -o fresh.json
+          diff -u examples/baseline.json fresh.json
+          dataset-profiler compare examples/sales.csv \
+            --baseline fresh.json --fail-on-drift | tee report.txt
+          grep -q "no drift detected" report.txt
