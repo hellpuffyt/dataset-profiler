@@ -346,3 +346,46 @@ def test_the_committed_example_drifts_as_documented(
     lines = capsys.readouterr().out.strip().splitlines()
     expected = (root / "examples" / "expected-drift.tsv").read_text(encoding="utf-8")
     assert lines == expected.strip().splitlines()
+
+
+# --- audit regressions: unusable input is exit 1 with a message ------------
+
+
+def test_undecodable_input_is_a_message_not_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "latin.csv"
+    path.write_bytes(b"name\n\xff\xfe\n")
+    assert main(["profile", str(path)]) == 1
+    err = capsys.readouterr().err
+    assert "not valid utf-8" in err
+    assert main(["profile", str(path), "--encoding", "latin-1"]) == 0
+
+
+def test_undecodable_baseline_is_a_message(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "d.csv"
+    data.write_text("a\n1\n", encoding="utf-8")
+    baseline = tmp_path / "b.json"
+    baseline.write_bytes(b"\xff\xfe{}")
+    assert main(["compare", str(data), "--baseline", str(baseline)]) == 1
+    assert "not valid utf-8" in capsys.readouterr().err
+
+
+def test_unknown_encoding_is_a_message(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "d.csv"
+    data.write_text("a\n1\n", encoding="utf-8")
+    assert main(["profile", str(data), "--encoding", "no-such-codec"]) == 1
+    assert "unknown encoding" in capsys.readouterr().err
+
+
+def test_oversized_field_is_a_message(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "wide.csv"
+    data.write_text("a,b\nx," + "y" * 200_000 + "\n", encoding="utf-8")
+    assert main(["profile", str(data)]) == 1
+    assert "malformed CSV input" in capsys.readouterr().err
