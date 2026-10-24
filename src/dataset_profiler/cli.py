@@ -19,6 +19,7 @@ Exit codes are part of the interface:
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from collections.abc import Sequence
 
@@ -244,6 +245,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_compare(args)
     except ProfilerError as error:
         print(f"{PROGRAM}: {error}", file=sys.stderr)
+        return 1
+    except UnicodeDecodeError as error:
+        print(
+            f"{PROGRAM}: input is not valid {args.encoding} ({error.reason} at byte "
+            f"{error.start}); pass --encoding",
+            file=sys.stderr,
+        )
+        return 1
+    except LookupError as error:
+        print(f"{PROGRAM}: {error}", file=sys.stderr)
+        return 1
+    except csv.Error as error:
+        print(f"{PROGRAM}: malformed CSV input: {error}", file=sys.stderr)
         return 1
     except BrokenPipeError:  # pragma: no cover - depends on the reader
         return 0

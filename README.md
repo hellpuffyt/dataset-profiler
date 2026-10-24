@@ -6,8 +6,15 @@ drift the next time the data arrives.
 
 Zero runtime dependencies. Standard library only.
 
+This project is not published on PyPI. **`pip install dataset-profiler` installs an
+unrelated third-party package with the same name** — install from source instead
+(Python 3.10+, no runtime dependencies):
+
 ```bash
-pip install dataset-profiler
+git clone https://github.com/hellpuffyt/dataset-profiler
+cd dataset-profiler
+python -m venv .venv && . .venv/bin/activate
+pip install .
 ```
 
 ```bash
@@ -167,13 +174,14 @@ values), `--max-categories` (the frequency table kept for drift), and
 histogram — the sample is random with respect to the data but identical for
 identical input, so two runs over the same file always agree).
 
-Measured on the machine that wrote this — Python 3.13, Windows, peak Python
-heap via `tracemalloc`, five columns of a generated CSV:
+Measured on an Apple M5 (10 cores, 16 GB, macOS 27), CPython 3.12, peak Python
+heap via `tracemalloc` around `main(["profile", FILE, "--format", "json"])`
+(tracing slows the run), five columns of a generated CSV:
 
 | Rows | File | Time | Peak heap (defaults) | Peak heap, `--max-distinct 1000` |
 | --- | --- | --- | --- | --- |
-| 1,000 | 0.03 MB | 0.03 s | 0.37 MB | 0.37 MB |
-| 1,000,000 | 36.13 MB | 27.1 s | 20.2 MB | 1.79 MB |
+| 1,000 | 0.03 MB | 0.08 s | 0.79 MB | 0.79 MB |
+| 1,000,000 | 35.6 MB | 38.8 s | 20.6 MB | 2.21 MB |
 
 The first version of the reader pushed the sniffed sample back by reading
 the whole file into a string; the same 1,000,000-row measurement peaked at
@@ -207,6 +215,9 @@ Shared by both subcommands:
 `compare` adds `-b/--baseline`, `--psi-threshold`, `--null-threshold` and
 `--fail-on-drift`.
 
+Input that cannot be read — wrong `--encoding`, an unknown encoding name, or
+a single field over Python's 128 KiB `csv` limit — exits **1** with a message.
+
 The input may be `-` for stdin. Dialects (`,` `;` tab `|`) are sniffed, a
 spreadsheet BOM is stripped, duplicate and blank header names are made
 unique (`a`, `a_2`, `column_3`), and ragged rows are padded or truncated and
@@ -237,8 +248,8 @@ round-trip is a printout, not a baseline, and there is a test that says so.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest -q                                                 # 299 tests
+pip install -e ".[dev]"                                   # inside the venv above
+pytest -q                                                 # 304 tests
 ruff check .                                              # lint
 mypy                                                      # strict types
 pytest -q --cov=dataset_profiler --cov-report=term-missing
@@ -246,6 +257,11 @@ pytest -q --cov=dataset_profiler --cov-report=term-missing
 
 Coverage is 99% of `src/dataset_profiler`; the only uncovered lines are the
 four in the `python -m dataset_profiler` shim.
+
+## Security
+
+See [SECURITY.md](SECURITY.md); audit evidence is in
+[docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
 
 ## License
 

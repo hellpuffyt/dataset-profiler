@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Undecodable input or baseline files, unknown `--encoding` names and fields
+  over the `csv` module's 128 KiB limit crashed with a traceback; they now exit
+  1 with a message, as the exit-code contract promises.
+
+### Changed
+
+- README: install from source. The name `dataset-profiler` on PyPI belongs to an
+  unrelated project, so the previous `pip install dataset-profiler` instruction
+  installed someone else's code. Memory table re-measured on the audit machine.
+
+### Added
+
+- Hand-computed PSI regression test; `SECURITY.md`, `.editorconfig`,
+  `docs/PRODUCTION_READINESS.md`.
+
 ## [0.1.0] — 2026-08-31
 
 First release.

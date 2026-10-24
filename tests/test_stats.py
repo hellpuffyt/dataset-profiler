@@ -262,3 +262,9 @@ def test_psi_checks_shape() -> None:
         psi([1, 2], [1, 2, 3])
     with pytest.raises(ValueError, match="empty histograms"):
         psi([], [])
+
+
+def test_psi_matches_a_hand_computed_value() -> None:
+    # 50/50 -> 25/75: (0.25-0.5)ln(0.25/0.5) + (0.75-0.5)ln(0.75/0.5)
+    #               = 0.25 * ln(3) = 0.27465307...
+    assert psi([50, 50], [25, 75]) == pytest.approx(0.25 * math.log(3), rel=1e-12)
