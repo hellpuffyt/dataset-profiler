@@ -1,39 +1,52 @@
 # dataset-profiler
 
-Profile a tabular dataset — inferred types, cardinality, null patterns and
-numeric shape — then store that profile and use it as a baseline to detect
-drift the next time the data arrives.
+A Python CLI that profiles a CSV file (inferred types, cardinality, null
+patterns and numeric shape), stores that profile as JSON, and later compares
+a new extract against it to report which columns drifted. Standard library
+only, no runtime dependencies.
 
-Zero runtime dependencies. Standard library only.
+## Demo
+
+<img src="docs/screenshots/dataset-profiler-profile-and-compare.png" width="100%" alt="Terminal capture: dataset-profiler profile examples/sales.csv prints six columns with types integer, string, float, date, boolean and empty; then compare examples/sales-q2.csv against examples/baseline.json with --fail-on-drift reports order_id and amount drifted with PSI 11.051 and 12.384, notes type_changed, 3 of 6 columns changed, exit status 2.">
+
+Real terminal capture of the two commands on the committed `examples/`
+fixtures. The same output is reproduced as text under
+[Why this exists](#why-this-exists).
+
+## Install
 
 This project is not published on PyPI. **`pip install dataset-profiler` installs an
-unrelated third-party package with the same name** — install from source instead
-(Python 3.10+, no runtime dependencies):
+unrelated third-party package with the same name.** Install from source instead
+(Python 3.10+):
 
 ```bash
 git clone https://github.com/hellpuffyt/dataset-profiler
 cd dataset-profiler
-python -m venv .venv && . .venv/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install .
 ```
 
+Then, from the clone:
+
 ```bash
 # What is in this file?
-dataset-profiler profile sales.csv
+dataset-profiler profile examples/sales.csv
 
-# Keep this month as the baseline.
-dataset-profiler profile sales.csv --format json -o baseline.json
+# Keep it as the baseline.
+dataset-profiler profile examples/sales.csv --format json -o baseline.json
 
-# Next month: has anything moved?
-dataset-profiler compare sales-q2.csv --baseline baseline.json --fail-on-drift
+# A later extract: has anything moved? (exits 2: three columns changed)
+dataset-profiler compare examples/sales-q2.csv --baseline baseline.json --fail-on-drift
 ```
+
+`python -m dataset_profiler` is equivalent to the `dataset-profiler` script.
 
 ## Why this exists
 
 Data pipelines fail loudly when a file is malformed and quietly when it is
 merely *different*. A region column that gains a new value, a price column
 that shifts by an order of magnitude, an id column that stops being unique,
-a field that goes from 0% null to 40% null — none of those raise anything.
+a field that goes from 0% null to 40% null: none of those raise anything.
 They just make every number downstream wrong.
 
 The usual answer is a notebook that somebody ran once. This is the same idea
@@ -72,16 +85,19 @@ notes      type_changed  unknown   -       type changed: empty -> string; null r
 3 of 6 column(s) changed
 ```
 
-Both of those are the committed `examples/` fixtures, and
-[the CI dogfood job](.github/workflows/ci.yml) asserts the real console
-script still produces exactly that output.
+Both of those are the committed `examples/` fixtures.
+[The CI dogfood job](.github/workflows/ci.yml) runs the real console script
+on them and diffs the `--format tsv` output against
+`examples/expected-profile.tsv` and `examples/expected-drift.tsv`, checks
+that `--fail-on-drift` exits 2, and checks that a freshly written baseline
+is byte-identical to `examples/baseline.json`.
 
 ## What it reports
 
 **Types.** Every CSV field is text, so a type is a claim about what the text
 consistently looks like: `empty`, `boolean`, `integer`, `float`, `date`,
 `datetime`, `string`. Per-value guesses are folded together with a widening
-lattice — `integer` and `float` make `float`, `date` and `datetime` make
+lattice: `integer` and `float` make `float`, `date` and `datetime` make
 `datetime`, anything else that disagrees makes `string`. Unification is
 commutative and associative (both asserted in the tests), so the inferred
 type never depends on row order.
@@ -99,7 +115,7 @@ three blanks, two `N/A` and one `-` in the same column came from three
 different producers, and that is worth seeing:
 
 ```
-active  boolean  2 (16.7%)  2  top 'true' x7; null spelt 'N/A' x2
+active     boolean  2 (16.7%)    2         top 'true' x7; len 4..5; null spelt 'N/A' x2
 ```
 
 The null vocabulary is `"" NA N/A NaN null none nil - ?`, case-insensitive
@@ -120,7 +136,7 @@ not share a category list, and may not even share columns. So:
 - **Numeric columns** are compared by re-expressing the current histogram on
   the *baseline* bin edges and taking the
   [PSI](https://en.wikipedia.org/wiki/Population_stability_index). The
-  baseline defines the grid — that is what a baseline is for. Mass that has
+  baseline defines the grid; that is what a baseline is for. Mass that has
   moved outside the old range is clamped into the outer bins rather than
   dropped, so a shift off the end shows up as a large PSI instead of as
   missing data.
@@ -145,8 +161,10 @@ being unique.
 ## Using it in a scheduled job
 
 `compare --fail-on-drift` exits **2** when anything moved, **1** when the
-input or the baseline was unusable, and **0** when the data is fine — so the
-three cases are distinguishable in a shell:
+input or the baseline was unusable, and **0** when the data is fine, so the
+three cases are distinguishable in a shell. Without `--fail-on-drift`,
+`compare` reports drift but exits 0; `profile` exits 0, or 1 on unusable
+input:
 
 ```bash
 dataset-profiler compare today.csv --baseline baseline.json \
@@ -162,7 +180,7 @@ esac
 
 The reader never loads the file. It reads 8 KB to sniff the dialect,
 finishes the line that sample stopped inside, and hands the CSV reader that
-sample followed by the rest of the stream — so reading the header consumes
+sample followed by the rest of the stream. Reading the header therefore consumes
 at most 8 KB plus one line no matter how large the file is, which
 [a test asserts](tests/test_io.py) by counting characters taken from the
 stream.
@@ -171,7 +189,7 @@ What memory the profiler does use is set by three options, not by the number
 of rows: `--max-distinct` (exact cardinality is counted up to this many
 values), `--max-categories` (the frequency table kept for drift), and
 `--sample-size` (a bounded, *seeded* reservoir for quantiles and the
-histogram — the sample is random with respect to the data but identical for
+histogram; the sample is random with respect to the data but identical for
 identical input, so two runs over the same file always agree).
 
 Measured on an Apple M5 (10 cores, 16 GB, macOS 27), CPython 3.12, peak Python
@@ -189,8 +207,8 @@ the whole file into a string; the same 1,000,000-row measurement peaked at
 why the test above counts characters rather than trusting the code to look
 right.
 
-Every limit that was actually hit is recorded *in the profile* —
-`distinct_truncated`, `categories_truncated`, `sampled` — so a consumer can
+Every limit that was actually hit is recorded *in the profile*
+(`distinct_truncated`, `categories_truncated`, `sampled`), so a consumer can
 tell "this is exact" from "this is the best a bounded profiler could do".
 The drift report says so too, in the notes.
 
@@ -215,14 +233,14 @@ Shared by both subcommands:
 `compare` adds `-b/--baseline`, `--psi-threshold`, `--null-threshold` and
 `--fail-on-drift`.
 
-Input that cannot be read — wrong `--encoding`, an unknown encoding name, or
-a single field over Python's 128 KiB `csv` limit — exits **1** with a message.
+Input that cannot be read (wrong `--encoding`, an unknown encoding name, or
+a single field over Python's 128 KiB `csv` limit) exits **1** with a message.
 
 The input may be `-` for stdin. Dialects (`,` `;` tab `|`) are sniffed, a
 spreadsheet BOM is stripped, duplicate and blank header names are made
 unique (`a`, `a_2`, `column_3`), and ragged rows are padded or truncated and
-counted rather than raised on — a profile that says "3 rows did not match
-the header width" is useful, and a traceback is not.
+counted rather than raised on. A profile that warns "1 row(s) did not
+match the header width" is useful; a traceback is not.
 
 ## As a library
 
@@ -242,8 +260,8 @@ for column in report.changes:
 ```
 
 A `DatasetProfile` is a value: it compares by equality and survives a round
-trip through JSON unchanged. That is not a nicety — a baseline that does not
-round-trip is a printout, not a baseline, and there is a test that says so.
+trip through JSON unchanged. A baseline that does not round-trip is a
+printout, not a baseline, and there is a test that says so.
 
 ## Development
 
@@ -256,7 +274,10 @@ pytest -q --cov=dataset_profiler --cov-report=term-missing
 ```
 
 Coverage is 99% of `src/dataset_profiler`; the only uncovered lines are the
-four in the `python -m dataset_profiler` shim.
+four in the `python -m dataset_profiler` shim. CI runs the tests on Linux,
+macOS and Windows with Python 3.10 to 3.13, plus ruff, strict mypy, coverage
+and the dogfood job described above. See [CONTRIBUTING.md](CONTRIBUTING.md)
+before opening a pull request.
 
 ## Security
 
@@ -265,4 +286,4 @@ See [SECURITY.md](SECURITY.md); audit evidence is in
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
